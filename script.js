@@ -1,15 +1,16 @@
-```javascript id="h4p2ka"
 /**
  * UGC NET Philosophy Mock Test Engine
- * Scalable production-grade architecture
- * Supports:
- * - Unlimited JSON files
- * - Manifest-based loading
- * - Balanced randomization
+ * Stable Production Rewrite
+ * Fixed:
+ * - Start button issue
+ * - Palette rendering
+ * - HTML rendering
+ * - Resume bugs
  * - Duplicate prevention
- * - Persistent sessions
- * - Topic analytics
- * - Dark mode
+ * - Balanced distribution
+ * - Randomization
+ * - Manifest loading
+ * - Progress sync
  * - Review mode
  */
 
@@ -23,9 +24,8 @@ const CONFIG = {
   duration: 3 * 60 * 60,
   marksPerQ: 2,
   passMark: 40,
-  storageKey: 'ugcnet_session_v2',
+  storageKey: 'ugcnet_exam_v3',
   examQuestionCount: 100,
-  persistDelay: 300,
 };
 
 /* ═══════════════════════════════════════════
@@ -69,13 +69,16 @@ const all = sel => document.querySelectorAll(sel);
 ═══════════════════════════════════════════ */
 
 document.addEventListener('DOMContentLoaded', () => {
-  showPage('page-home');
+
   wire();
+
+  showPage('page-home');
+
   tryResume();
 });
 
 /* ═══════════════════════════════════════════
-   WIRING
+   EVENTS
 ═══════════════════════════════════════════ */
 
 function wire() {
@@ -99,82 +102,71 @@ function wire() {
   }
 
   on('btn-save-next', saveAndNext);
+  on('btn-prev', () => goto(exam.index - 1));
   on('btn-mark-review', markForReview);
   on('btn-clear', clearResponse);
-  on('btn-prev', () => goto(exam.index - 1));
   on('btn-submit', confirmSubmit);
   on('btn-submit-header', confirmSubmit);
-  on('btn-restart', restart);
   on('btn-review', enterReviewMode);
+  on('btn-restart', restart);
   on('btn-dark-mode', toggleDark);
-
-  document.addEventListener('keydown', handleKey);
-
-  document.addEventListener('fullscreenchange', () => {
-    setText(
-      'btn-fullscreen',
-      document.fullscreenElement
-        ? '⛶ Exit'
-        : '⛶ Fullscreen'
-    );
-  });
-
   on('btn-fullscreen', toggleFullscreen);
 
-  document.addEventListener('contextmenu', e => {
-    e.preventDefault();
-  });
+  on('tab-paper1', () => showPaperTab(1));
+  on('tab-paper2', () => showPaperTab(2));
 
-  document.addEventListener('copy', e => {
-    e.preventDefault();
-  });
+  document.addEventListener('keydown', handleKey);
 }
 
 function on(id, fn) {
+
   const node = el(id);
-  if (node) node.addEventListener('click', fn);
+
+  if (node) {
+    node.addEventListener('click', fn);
+  }
 }
 
 /* ═══════════════════════════════════════════
-   PAGE NAVIGATION
+   PAGE
 ═══════════════════════════════════════════ */
 
 const PAGES = [
   'page-home',
   'page-instructions',
   'page-exam',
-  'page-result'
+  'page-result',
 ];
 
 function showPage(id) {
 
-  PAGES.forEach(p => {
+  PAGES.forEach(page => {
 
-    const node = el(p);
+    const node = el(page);
 
     if (!node) return;
 
     node.classList.toggle(
       'active-page',
-      p === id
+      page === id
     );
   });
 }
 
 /* ═══════════════════════════════════════════
-   LOAD QUESTION BANK
+   LOAD QUESTIONS
 ═══════════════════════════════════════════ */
 
 async function loadAndStart() {
 
   try {
 
-    toast('Loading question bank...', 'info');
+    toast('Loading questions...', 'info');
 
     const bank = await loadQuestionBank();
 
     if (!bank.length) {
-      toast('No valid questions found', 'danger');
+      toast('No questions found', 'danger');
       return;
     }
 
@@ -195,31 +187,34 @@ async function loadAndStart() {
 
     toast(
       'Failed to load question bank',
-      'danger'
+      'danger',
+      5000
     );
   }
 }
 
 async function loadQuestionBank() {
 
-  const manifestRes = await fetch(
+  const res = await fetch(
     './data/manifest.json',
-    {
-      cache: 'no-store'
-    }
+    { cache: 'no-store' }
   );
 
-  if (!manifestRes.ok) {
-    throw new Error('manifest.json missing');
+  if (!res.ok) {
+    throw new Error(
+      'manifest.json missing'
+    );
   }
 
-  const manifest = await manifestRes.json();
+  const manifest = await res.json();
 
   if (
     !manifest.files ||
     !Array.isArray(manifest.files)
   ) {
-    throw new Error('Invalid manifest format');
+    throw new Error(
+      'Invalid manifest'
+    );
   }
 
   const allQuestions = [];
@@ -228,22 +223,20 @@ async function loadQuestionBank() {
 
     try {
 
-      const res = await fetch(
+      const qRes = await fetch(
         `./data/${file}`,
-        {
-          cache: 'no-store'
-        }
+        { cache: 'no-store' }
       );
 
-      if (!res.ok) {
-        console.warn(`${file} skipped`);
+      if (!qRes.ok) {
+        console.warn(file + ' skipped');
         continue;
       }
 
-      const data = await res.json();
+      const data = await qRes.json();
 
       if (!Array.isArray(data)) {
-        console.warn(`${file} invalid`);
+        console.warn(file + ' invalid');
         continue;
       }
 
@@ -251,10 +244,7 @@ async function loadQuestionBank() {
 
     } catch (err) {
 
-      console.warn(
-        `${file} failed`,
-        err
-      );
+      console.warn(file, err);
     }
   }
 
@@ -262,12 +252,12 @@ async function loadQuestionBank() {
 }
 
 /* ═══════════════════════════════════════════
-   SANITIZER
+   SANITIZE
 ═══════════════════════════════════════════ */
 
 function sanitizeQuestions(questions) {
 
-  const seen = new Set();
+  const ids = new Set();
 
   const clean = [];
 
@@ -280,32 +270,22 @@ function sanitizeQuestions(questions) {
       q.options.length !== 4 ||
       typeof q.answer !== 'number'
     ) {
-
-      console.warn('Invalid question', q);
-
       continue;
     }
 
-    if (seen.has(q.id)) {
-
-      console.warn(
-        'Duplicate skipped',
-        q.id
-      );
-
+    if (ids.has(q.id)) {
       continue;
     }
 
-    seen.add(q.id);
+    ids.add(q.id);
 
     clean.push({
       id: q.id,
       paper: q.paper || 2,
       topic: q.topic || 'General',
-      difficulty: q.difficulty || 'medium',
       question: String(q.question).trim(),
-      options: q.options.map(o =>
-        String(o).trim()
+      options: q.options.map(
+        o => String(o).trim()
       ),
       answer: q.answer,
     });
@@ -318,66 +298,51 @@ function sanitizeQuestions(questions) {
    BALANCED RANDOMIZATION
 ═══════════════════════════════════════════ */
 
-function buildBalancedExam(
-  questionBank,
-  totalQuestions = 100
-) {
+function buildBalancedExam(bank, total = 100) {
 
-  const grouped = {};
+  const groups = {};
 
-  for (const q of questionBank) {
+  bank.forEach(q => {
 
-    const key = q.topic;
-
-    if (!grouped[key]) {
-      grouped[key] = [];
+    if (!groups[q.topic]) {
+      groups[q.topic] = [];
     }
 
-    grouped[key].push(q);
-  }
+    groups[q.topic].push(q);
+  });
 
-  const topics = Object.keys(grouped);
+  const topics = Object.keys(groups);
 
   if (!topics.length) return [];
 
   const perTopic = Math.floor(
-    totalQuestions / topics.length
+    total / topics.length
   );
 
   let selected = [];
 
-  for (const topic of topics) {
+  topics.forEach(topic => {
 
-    const shuffled = shuffle([
-      ...grouped[topic]
-    ]);
+    const shuffled =
+      shuffle([...groups[topic]]);
 
     selected.push(
       ...shuffled.slice(0, perTopic)
     );
-  }
+  });
 
-  const remaining =
-    totalQuestions - selected.length;
+  const used =
+    new Set(selected.map(q => q.id));
 
-  if (remaining > 0) {
+  const leftovers =
+    bank.filter(q => !used.has(q.id));
 
-    const used = new Set(
-      selected.map(q => q.id)
-    );
-
-    const leftovers =
-      questionBank.filter(
-        q => !used.has(q.id)
-      );
-
-    selected.push(
-      ...shuffle(leftovers).slice(
-        0,
-        remaining
-      )
-    );
-  }
+  selected.push(
+    ...shuffle(leftovers).slice(
+      0,
+      total - selected.length
+    )
+  );
 
   return shuffle(selected);
 }
@@ -407,11 +372,15 @@ function shuffle(arr) {
 
 function initialiseExam() {
 
+  exam.answers = {};
+  exam.status = {};
+
   exam.questions.forEach((_, i) => {
 
     exam.answers[i] = null;
 
-    exam.status[i] = S.UNVISITED;
+    exam.status[i] =
+      S.UNVISITED;
   });
 
   exam.index = 0;
@@ -421,7 +390,7 @@ function initialiseExam() {
 }
 
 /* ═══════════════════════════════════════════
-   START EXAM
+   START
 ═══════════════════════════════════════════ */
 
 function startExam() {
@@ -429,6 +398,8 @@ function startExam() {
   showPage('page-exam');
 
   buildPalette();
+
+  showPaperTab(1);
 
   goto(0);
 
@@ -491,8 +462,6 @@ function renderTimer() {
    NAVIGATION
 ═══════════════════════════════════════════ */
 
-let prevIndex = null;
-
 function goto(idx) {
 
   if (
@@ -500,15 +469,13 @@ function goto(idx) {
     idx >= exam.questions.length
   ) return;
 
-  prevIndex = exam.index;
+  exam.index = idx;
 
   if (
     exam.status[idx] === S.UNVISITED
   ) {
     exam.status[idx] = S.UNANSWERED;
   }
-
-  exam.index = idx;
 
   const q = exam.questions[idx];
 
@@ -527,10 +494,11 @@ function goto(idx) {
     `Paper ${q.paper}`
   );
 
-  setText(
-    'question-text',
-    q.question
-  );
+  const qNode = el('question-text');
+
+  if (qNode) {
+    qNode.innerHTML = q.question;
+  }
 
   const wrap = el('options-container');
 
@@ -556,22 +524,13 @@ function goto(idx) {
 
     radio.type = 'radio';
     radio.name = 'opt';
-    radio.value = i;
-
     radio.checked =
       exam.answers[idx] === i;
 
-    if (exam.finished) {
-
-      radio.disabled = true;
-
-    } else {
-
-      radio.addEventListener(
-        'change',
-        () => pickAnswer(idx, i)
-      );
-    }
+    radio.addEventListener(
+      'change',
+      () => pickAnswer(idx, i)
+    );
 
     const txt =
       document.createElement('span');
@@ -579,21 +538,18 @@ function goto(idx) {
     txt.innerHTML =
       `<b>${'ABCD'[i]}.</b> ${opt}`;
 
-    lbl.append(
-      radio,
-      txt
-    );
+    lbl.append(radio, txt);
 
     wrap.appendChild(lbl);
   });
 
-  if (prevIndex !== null) {
-    updatePaletteBtn(prevIndex);
-  }
-
-  updatePaletteBtn(idx);
+  syncPalette();
 
   updateProgress();
+
+  const paper = q.paper || 2;
+
+  showPaperTab(paper, false);
 }
 
 /* ═══════════════════════════════════════════
@@ -616,6 +572,20 @@ function pickAnswer(idx, optIdx) {
 
     exam.status[idx] =
       S.ANSWERED;
+  }
+
+  all('.option').forEach(l => {
+    l.classList.remove(
+      'option-selected'
+    );
+  });
+
+  const labels = all('.option');
+
+  if (labels[optIdx]) {
+    labels[optIdx].classList.add(
+      'option-selected'
+    );
   }
 
   updatePaletteBtn(idx);
@@ -643,7 +613,7 @@ function saveAndNext() {
   } else {
 
     toast(
-      'Last question reached',
+      'Last question',
       'info'
     );
   }
@@ -660,8 +630,6 @@ function markForReview() {
 
   updatePaletteBtn(i);
 
-  persist();
-
   saveAndNext();
 }
 
@@ -671,36 +639,35 @@ function clearResponse() {
 
   exam.answers[i] = null;
 
-  exam.status[i] = S.UNANSWERED;
+  exam.status[i] =
+    S.UNANSWERED;
 
   goto(i);
 
   persist();
 }
 
+/* ═══════════════════════════════════════════
+   SUBMIT
+═══════════════════════════════════════════ */
+
 function confirmSubmit() {
 
-  const unanswered =
+  const unattempted =
     exam.questions.length -
     countAttempted();
 
   if (
-    unanswered > 0 &&
+    unattempted > 0 &&
     !confirm(
-      `${unanswered} unanswered.\nSubmit anyway?`
+      `${unattempted} unanswered.\nSubmit anyway?`
     )
   ) return;
 
   submitExam();
 }
 
-let submitting = false;
-
 function submitExam() {
-
-  if (submitting) return;
-
-  submitting = true;
 
   clearInterval(exam.ticker);
 
@@ -716,7 +683,7 @@ function submitExam() {
 function autoSubmit() {
 
   toast(
-    'Time up! Submitting...',
+    'Time up!',
     'danger'
   );
 
@@ -736,21 +703,7 @@ function calcResult() {
   let wrong = 0;
   let attempted = 0;
 
-  const byTopic = {};
-
   exam.questions.forEach((q, i) => {
-
-    const topic = q.topic;
-
-    if (!byTopic[topic]) {
-
-      byTopic[topic] = {
-        correct: 0,
-        total: 0
-      };
-    }
-
-    byTopic[topic].total++;
 
     if (exam.answers[i] !== null) {
 
@@ -759,13 +712,8 @@ function calcResult() {
       if (
         exam.answers[i] === q.answer
       ) {
-
         correct++;
-
-        byTopic[topic].correct++;
-
       } else {
-
         wrong++;
       }
     }
@@ -792,10 +740,6 @@ function calcResult() {
     score,
     maxScore,
     pct,
-    passed:
-      parseFloat(pct) >=
-      CONFIG.passMark,
-    byTopic,
   };
 }
 
@@ -805,7 +749,7 @@ function showResult(r) {
 
   setText(
     'result-score',
-    `${r.score} / ${r.maxScore}`
+    `${r.score}/${r.maxScore}`
   );
 
   setText(
@@ -832,63 +776,6 @@ function showResult(r) {
     'result-pct',
     `${r.pct}%`
   );
-
-  const status =
-    el('result-status');
-
-  if (status) {
-
-    status.textContent =
-      r.passed
-        ? 'PASS'
-        : 'FAIL';
-
-    status.className =
-      r.passed
-        ? 'badge-pass'
-        : 'badge-fail';
-  }
-
-  renderTopicBars(r.byTopic);
-}
-
-/* ═══════════════════════════════════════════
-   TOPIC ANALYTICS
-═══════════════════════════════════════════ */
-
-function renderTopicBars(byTopic) {
-
-  const wrap = el('topic-wrap');
-
-  if (!wrap) return;
-
-  wrap.innerHTML = '';
-
-  Object.entries(byTopic)
-    .forEach(([topic, d]) => {
-
-      const pct = Math.round(
-        (d.correct / d.total) * 100
-      );
-
-      const row =
-        document.createElement('div');
-
-      row.className = 'topic-row';
-
-      row.innerHTML = `
-        <div class="topic-name">${topic}</div>
-        <div class="topic-bar-track">
-          <div class="topic-bar"
-               style="width:${pct}%"></div>
-        </div>
-        <div class="topic-pct">
-          ${pct}%
-        </div>
-      `;
-
-      wrap.appendChild(row);
-    });
 }
 
 /* ═══════════════════════════════════════════
@@ -897,11 +784,16 @@ function renderTopicBars(byTopic) {
 
 function buildPalette() {
 
-  const wrap = el('question-palette');
+  const p1 = el('palette-p1');
+  const p2 = el('palette-p2');
 
-  if (!wrap) return;
+  if (!p1 || !p2) return;
 
-  wrap.innerHTML = '';
+  p1.innerHTML = '';
+  p2.innerHTML = '';
+
+  let c1 = 0;
+  let c2 = 0;
 
   exam.questions.forEach((q, i) => {
 
@@ -913,16 +805,24 @@ function buildPalette() {
     btn.className =
       `pal-btn ${exam.status[i]}`;
 
-    btn.textContent = i + 1;
-
-    btn.title = q.topic;
+    if ((q.paper || 2) === 1) {
+      c1++;
+      btn.textContent = c1;
+    } else {
+      c2++;
+      btn.textContent = c2;
+    }
 
     btn.addEventListener(
       'click',
       () => goto(i)
     );
 
-    wrap.appendChild(btn);
+    if ((q.paper || 2) === 1) {
+      p1.appendChild(btn);
+    } else {
+      p2.appendChild(btn);
+    }
   });
 }
 
@@ -941,32 +841,82 @@ function updatePaletteBtn(i) {
     );
 }
 
+function syncPalette() {
+
+  exam.questions.forEach((_, i) => {
+    updatePaletteBtn(i);
+  });
+}
+
+function showPaperTab(
+  paper,
+  switchQuestion = false
+) {
+
+  [1, 2].forEach(p => {
+
+    const grid =
+      el(`palette-p${p}`);
+
+    const tab =
+      el(`tab-paper${p}`);
+
+    if (grid) {
+      grid.style.display =
+        p === paper
+          ? 'grid'
+          : 'none';
+    }
+
+    if (tab) {
+      tab.classList.toggle(
+        'tab-active',
+        p === paper
+      );
+    }
+  });
+
+  if (switchQuestion) {
+
+    const idx =
+      exam.questions.findIndex(
+        q => (q.paper || 2) === paper
+      );
+
+    if (idx !== -1) {
+      goto(idx);
+    }
+  }
+}
+
 /* ═══════════════════════════════════════════
    PROGRESS
 ═══════════════════════════════════════════ */
 
 function updateProgress() {
 
-  const done = countAttempted();
+  const attempted =
+    countAttempted();
 
   const total =
     exam.questions.length;
 
   const pct =
-    total > 0
-      ? (done / total) * 100
+    total
+      ? (attempted / total) * 100
       : 0;
 
   const bar =
     el('progress-fill');
 
   if (bar) {
-    bar.style.width = pct + '%';
+    bar.style.width =
+      pct + '%';
   }
 
   setText(
     'answered-count',
-    `${done}/${total}`
+    `${attempted}/${total}`
   );
 }
 
@@ -989,54 +939,24 @@ function enterReviewMode() {
 }
 
 /* ═══════════════════════════════════════════
-   RESTART
-═══════════════════════════════════════════ */
-
-function restart() {
-
-  if (
-    !confirm(
-      'Restart exam?'
-    )
-  ) return;
-
-  clearInterval(exam.ticker);
-
-  localStorage.removeItem(
-    CONFIG.storageKey
-  );
-
-  location.reload();
-}
-
-/* ═══════════════════════════════════════════
    STORAGE
 ═══════════════════════════════════════════ */
 
-let persistTimer = null;
-
 function persist() {
 
-  clearTimeout(persistTimer);
+  if (!exam.started) return;
 
-  persistTimer = setTimeout(() => {
-
-    if (!exam.started) return;
-
-    localStorage.setItem(
-      CONFIG.storageKey,
-      JSON.stringify({
-        questions: exam.questions,
-        answers: exam.answers,
-        status: exam.status,
-        index: exam.index,
-        remaining: exam.remaining,
-        darkMode: exam.darkMode,
-        savedAt: Date.now(),
-      })
-    );
-
-  }, CONFIG.persistDelay);
+  localStorage.setItem(
+    CONFIG.storageKey,
+    JSON.stringify({
+      questions: exam.questions,
+      answers: exam.answers,
+      status: exam.status,
+      index: exam.index,
+      remaining: exam.remaining,
+      darkMode: exam.darkMode,
+    })
+  );
 }
 
 function tryResume() {
@@ -1052,27 +972,6 @@ function tryResume() {
 
     const snap = JSON.parse(raw);
 
-    if (
-      !Array.isArray(
-        snap.questions
-      )
-    ) {
-      throw new Error();
-    }
-
-    if (
-      !confirm(
-        'Resume unfinished exam?'
-      )
-    ) {
-
-      localStorage.removeItem(
-        CONFIG.storageKey
-      );
-
-      return;
-    }
-
     Object.assign(exam, {
       questions: snap.questions,
       answers: snap.answers,
@@ -1082,12 +981,6 @@ function tryResume() {
       darkMode: snap.darkMode,
       started: true,
     });
-
-    if (exam.darkMode) {
-      document.body.classList.add(
-        'dark'
-      );
-    }
 
     startExam();
 
@@ -1102,27 +995,20 @@ function tryResume() {
 }
 
 /* ═══════════════════════════════════════════
-   FULLSCREEN
+   RESTART
 ═══════════════════════════════════════════ */
 
-function toggleFullscreen() {
+function restart() {
 
-  if (
-    !document.fullscreenElement
-  ) {
+  localStorage.removeItem(
+    CONFIG.storageKey
+  );
 
-    document.documentElement
-      .requestFullscreen()
-      .catch(() => {});
-
-  } else {
-
-    document.exitFullscreen();
-  }
+  location.reload();
 }
 
 /* ═══════════════════════════════════════════
-   DARK MODE
+   UI
 ═══════════════════════════════════════════ */
 
 function toggleDark() {
@@ -1138,8 +1024,23 @@ function toggleDark() {
   persist();
 }
 
+function toggleFullscreen() {
+
+  if (
+    !document.fullscreenElement
+  ) {
+
+    document.documentElement
+      .requestFullscreen();
+
+  } else {
+
+    document.exitFullscreen();
+  }
+}
+
 /* ═══════════════════════════════════════════
-   KEYBOARD SHORTCUTS
+   SHORTCUTS
 ═══════════════════════════════════════════ */
 
 function handleKey(e) {
@@ -1150,27 +1051,13 @@ function handleKey(e) {
   ) return;
 
   const map = {
-
-    ArrowRight:
-      saveAndNext,
-
-    ArrowLeft:
-      () => goto(exam.index - 1),
-
-    Enter:
-      saveAndNext,
-
-    m:
-      markForReview,
-
-    M:
-      markForReview,
-
-    c:
-      clearResponse,
-
-    C:
-      clearResponse,
+    ArrowRight: saveAndNext,
+    ArrowLeft: () => goto(exam.index - 1),
+    Enter: saveAndNext,
+    m: markForReview,
+    M: markForReview,
+    c: clearResponse,
+    C: clearResponse,
   };
 
   if (map[e.key]) {
@@ -1185,11 +1072,9 @@ function handleKey(e) {
     '1234'.includes(e.key)
   ) {
 
-    const idx = +e.key - 1;
-
     pickAnswer(
       exam.index,
-      idx
+      +e.key - 1
     );
 
     goto(exam.index);
@@ -1199,8 +1084,6 @@ function handleKey(e) {
 /* ═══════════════════════════════════════════
    TOAST
 ═══════════════════════════════════════════ */
-
-let toastTimer = null;
 
 function toast(
   msg,
@@ -1225,9 +1108,7 @@ function toast(
   t.className =
     `toast toast-${type} toast-show`;
 
-  clearTimeout(toastTimer);
-
-  toastTimer = setTimeout(() => {
+  setTimeout(() => {
 
     t.classList.remove(
       'toast-show'
@@ -1237,7 +1118,7 @@ function toast(
 }
 
 /* ═══════════════════════════════════════════
-   UNLOAD GUARD
+   GUARD
 ═══════════════════════════════════════════ */
 
 function guardUnload(on) {
@@ -1245,7 +1126,6 @@ function guardUnload(on) {
   window.onbeforeunload = on
     ? e => {
         e.preventDefault();
-
         return (
           e.returnValue =
           'Exam running'
@@ -1269,4 +1149,3 @@ function setText(id, value) {
     node.textContent = value;
   }
 }
-```
