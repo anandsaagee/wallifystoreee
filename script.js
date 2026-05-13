@@ -106,10 +106,20 @@ function wire() {
   on('btn-mark-review', markForReview);
   on('btn-clear', clearResponse);
   on('btn-submit', confirmSubmit);
+  on('btn-submit-sidebar', confirmSubmit);
   on('btn-submit-header', confirmSubmit);
   on('btn-review', enterReviewMode);
   on('btn-restart', restart);
+  on('btn-home-result', () => showPage('page-home'));
+  on('btn-back-home', () => showPage('page-home'));
+  on('btn-goto-instructions-2', () => showPage('page-instructions'));
+  on('btn-scroll-features', () => { const f = el('features'); if(f) f.scrollIntoView({behavior: 'smooth'}); });
+  on('btn-palette-toggle', () => { const s = el('exam-sidebar'); if(s) s.classList.toggle('open'); });
+  on('btn-sidebar-close', () => { const s = el('exam-sidebar'); if(s) s.classList.remove('open'); });
+
   on('btn-dark-mode', toggleDark);
+  on('btn-dark-mode-2', toggleDark);
+  on('btn-dark-mode-3', toggleDark);
   on('btn-fullscreen', toggleFullscreen);
 
   on('tab-paper1', () => showPaperTab(1));
